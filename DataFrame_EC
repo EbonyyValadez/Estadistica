@@ -1,0 +1,65 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Extraer datos
+df = pd.read_csv("data/ensanut2020.csv", encoding="latin", sep=";")
+df.replace(",", ".", regex=True, inplace=True)
+indices_mantener = [7,8,9,39,59,60,61,63,65,67,69,71,73,75,77,79,81,83,86,89,90,91,92]
+df_clean = df.iloc[:, indices_mantener]
+df_clean.info()
+df_clean.head(5)
+
+# Filtra valores no nulos en ambas columnas
+df_clean = df_clean[['H0902A', 'valor.GLU_SUERO', 'HB1AC.Valor']].dropna()
+
+# Verifica que `GLU_SUERO` sea numérica 
+df_clean['valor.GLU_SUERO'] = pd.to_numeric(df_clean['valor.GLU_SUERO'], errors='coerce')
+df_clean = df_clean.dropna(subset=['valor.GLU_SUERO'])  
+
+df_clean['HB1AC.Valor'] = df_clean['HB1AC.Valor'].replace(",", ".", regex=True)
+df_clean['HB1AC.Valor'] = pd.to_numeric(df_clean['HB1AC.Valor'], errors='coerce')
+
+# Filtra los valores en H0902A para mantener solo aquellos que indican "1" (tiene diabetes) o "0" (no tiene diabetes)
+df_clean = df_clean[(df_clean['H0902A'] == 1) | (df_clean['H0902A'] == -1)]
+df_clean.head(10)
+
+
+def clasificar_glucosa(nivel):
+    if nivel < 100:
+        return 'Normal'
+    elif 100 <= nivel < 126:
+        return 'Prediabetes'
+    else:
+        return 'Diabetes'
+
+df_clean['Categoria_Glucosa'] = df_clean['valor.GLU_SUERO'].apply(clasificar_glucosa)
+
+# Agregar clasificación de HbA1c
+def clasificar_hba1c(nivel):
+    if nivel < 5.7:
+        return 'Normal'
+    elif 5.7 <= nivel < 6.5:
+        return 'Prediabetes'
+    else:
+        return 'Diabetes'
+
+# Aplicar la función de clasificación a la columna de HbA1c
+df_clean['Categoria_HbA1c'] = df_clean['HB1AC.Valor'].apply(clasificar_hba1c)
+
+# Crear una tabla de contingencia para comparar la HbA1c con la presencia de diabetes
+tabla_contingencia_hba1c = pd.crosstab(df_clean['H0902A'], df_clean['Categoria_HbA1c'])
+print(tabla_contingencia_hba1c)
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,65 +1,74 @@
+def limpiar_df_respecto_indices(df, indices):
+    df_return = df.copy()
+    for i in indices:
+        columna_auxiliar = pd.to_numeric(df_return.iloc[:, i], errors='coerce')
+        df_return = df_return.drop(columna_auxiliar[columna_auxiliar.isna()].index)
+        df_return = df_return.reset_index(drop=True)
+    return df_return
+
+def inferencia_diferencia_proporciones(x1, n1, x2, n2):
+    p1 = x1 / n1
+    p2 = x2 / n2
+    p_c = (x1 + x2) / (n1 + n2)
+    SE = (p_c * (1 - p_c) * (1 / n1 + 1 / n2)) ** 0.5
+    z = (p1 - p2) / SE
+    p_value = 1 - norm.cdf(abs(z))
+    print("Estadístico z:", z)
+    print("Valor p:", p_value)
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.stats import norm
 
 # Extraer datos
 df = pd.read_csv("data/ensanut2020.csv", encoding="latin", sep=";")
 df.replace(",", ".", regex=True, inplace=True)
-indices_mantener = [7,8,9,39,59,60,61,63,65,67,69,71,73,75,77,79,81,83,86,89,90,91,92]
+indices_mantener = [7, 8, 9, 39, 59, 60, 61, 63, 65, 67, 69, 71, 73, 75, 77, 79, 81, 83, 86, 89, 91, 92]
 df_clean = df.iloc[:, indices_mantener]
 df_clean.info()
-df_clean.head(5)
 
-# Filtra valores no nulos en ambas columnas
-df_clean = df_clean[['H0902A', 'valor.GLU_SUERO', 'HB1AC.Valor']].dropna()
+"""
+# Eliminar filas con datos nulos (en este caso valores de HB1AC)
+HB1AC_valor = pd.to_numeric(df_clean.iloc[:, 17], errors='coerce')
+df_clean = df_clean.drop(HB1AC_valor[HB1AC_valor.isna()].index.tolist()).reset_index(drop=True)
+HB1AC_valor = pd.to_numeric(df_clean.iloc[:, 17], errors='coerce')
+ """
 
-# Verifica que `GLU_SUERO` sea numérica 
-df_clean['valor.GLU_SUERO'] = pd.to_numeric(df_clean['valor.GLU_SUERO'], errors='coerce')
-df_clean = df_clean.dropna(subset=['valor.GLU_SUERO'])  
+df_clean = limpiar_df_respecto_indices(df_clean, [3, 10, 11])
+df_con_diabetes = df_clean[(df_clean.iloc[:, 3] == 1)][[df_clean.columns[3], df_clean.columns[10], df_clean.columns[11]]].reset_index(drop=True)
+df_sin_diabetes = df_clean[(df_clean.iloc[:, 3] != 1)][[df_clean.columns[3], df_clean.columns[10], df_clean.columns[11]]].reset_index(drop=True)
 
-df_clean['HB1AC.Valor'] = df_clean['HB1AC.Valor'].replace(",", ".", regex=True)
-df_clean['HB1AC.Valor'] = pd.to_numeric(df_clean['HB1AC.Valor'], errors='coerce')
+umbral_hdl = 40   # Nivel bajo de HDL
+umbral_ldl = 130  # Nivel alto de LDL
 
-# Filtra los valores en H0902A para mantener solo aquellos que indican "1" (tiene diabetes) o "0" (no tiene diabetes)
-df_clean = df_clean[(df_clean['H0902A'] == 1) | (df_clean['H0902A'] == -1)]
-df_clean.head(10)
+x1_hdl = (pd.to_numeric(df_con_diabetes.iloc[:, 1]) < umbral_hdl).sum()
+n1_hdl = (pd.to_numeric(df_sin_diabetes.iloc[:, 1]) < umbral_hdl).sum()
+x2_hdl = (pd.to_numeric(df_con_diabetes.iloc[:, 1]) >= umbral_hdl).sum()
+n2_hdl = (pd.to_numeric(df_sin_diabetes.iloc[:, 1]) >= umbral_hdl).sum()
 
+inferencia_diferencia_proporciones(x1_hdl, n1_hdl, x2_hdl, n2_hdl)
 
-def clasificar_glucosa(nivel):
-    if nivel < 100:
-        return 'Normal'
-    elif 100 <= nivel < 126:
-        return 'Prediabetes'
-    else:
-        return 'Diabetes'
+# Estadístico z: 2.924
+# Valor p: 0.00172
 
-df_clean['Categoria_Glucosa'] = df_clean['valor.GLU_SUERO'].apply(clasificar_glucosa)
+# Con un nivel de significancia del 0.001 (con probabilidad del
+# 99.9 %) Valor p > Significancia, por lo tanto no se rechaza
+# la hipotesis nula H0: x1 - x2 > 0 (debido a que es prueba de
+# cola superior)
 
-# Agregar clasificación de HbA1c
-def clasificar_hba1c(nivel):
-    if nivel < 5.7:
-        return 'Normal'
-    elif 5.7 <= nivel < 6.5:
-        return 'Prediabetes'
-    else:
-        return 'Diabetes'
-
-# Aplicar la función de clasificación a la columna de HbA1c
-df_clean['Categoria_HbA1c'] = df_clean['HB1AC.Valor'].apply(clasificar_hba1c)
-
-# Crear una tabla de contingencia para comparar la HbA1c con la presencia de diabetes
-tabla_contingencia_hba1c = pd.crosstab(df_clean['H0902A'], df_clean['Categoria_HbA1c'])
-print(tabla_contingencia_hba1c)
-
-
-
-
-
-
-
-
-
-
-
-
+# Grafica
+prop_con_diabetes_hdl_bajo = x1_hdl / (x1_hdl + x2_hdl)
+prop_sin_diabetes_hdl_bajo = n1_hdl / (n1_hdl + n2_hdl)
+data = pd.DataFrame({
+    'Grupo': ['Con Diabetes', 'Sin Diabetes'],
+    'Proporción de HDL Bajo (<40)': [prop_con_diabetes_hdl_bajo, prop_sin_diabetes_hdl_bajo]
+})
+plt.figure(figsize=(10, 6))
+sns.barplot(data=data, x='Grupo', y='Proporción de HDL Bajo (<40)', palette="viridis")
+plt.ylim(0, 1)
+plt.title("Proporción de Personas con Niveles Bajos de HDL (<40) en Grupos con y sin Diabetes")
+plt.ylabel("Proporción")
+plt.xlabel("Grupo")
+plt.show()
